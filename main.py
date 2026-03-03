@@ -24,30 +24,58 @@ GOOGLE_CREDS = os.getenv("GOOGLE_CREDS")
 # =========================
 def baixar_csv():
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        print("Abrindo navegador...")
+
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage"]
+        )
+
         context = browser.new_context()
         page = context.new_page()
 
         print("Iniciando login no SPX...")
 
-        # Login
-        page.goto("https://spx.shopee.com.br")
-        page.fill('input[type="email"]', SPX_EMAIL)
-        page.fill('input[type="password"]', SPX_PASSWORD)
-        page.click("button[type=submit]")
+        # Acessa SPX
+        page.goto("https://spx.shopee.com.br", wait_until="domcontentloaded")
 
-        page.wait_for_load_state("networkidle")
+        # DEBUG
+        print("\n================ DEBUG INFO ================\n")
+        print("URL atual:", page.url)
+        print("\nHTML carregado:\n")
+        print(page.content())
+        print("\n============================================\n")
+
+        # Espera campo de login (SSO)
+        page.wait_for_selector('input[name="loginKey"]', timeout=60000)
+
+        print("Preenchendo credenciais...")
+
+        page.fill('input[name="loginKey"]', SPX_EMAIL)
+        page.fill('input[type="password"]', SPX_PASSWORD)
+
+        page.click('button[type="submit"]')
+
+        print("Aguardando redirecionamento...")
+        page.wait_for_load_state("networkidle", timeout=60000)
+
+        time.sleep(5)
 
         print("Login realizado com sucesso.")
 
         # Ir para dashboard
-        page.goto("https://spx.shopee.com.br/#/dashboard/toProductivity")
-        page.wait_for_load_state("networkidle")
+        page.goto(
+            "https://spx.shopee.com.br/#/dashboard/toProductivity",
+            wait_until="networkidle"
+        )
 
-        print("Acessando dashboard e exportando relatório...")
+        print("Acessando dashboard...")
 
-        # Exportar CSV
-        with page.expect_download() as download_info:
+        page.wait_for_selector("text=Export", timeout=60000)
+
+        print("Exportando relatório...")
+
+        with page.expect_download(timeout=60000) as download_info:
             page.click("text=Export")
 
         download = download_info.value
@@ -65,6 +93,7 @@ def baixar_csv():
 # =========================
 def enviar_para_sheets(csv_path):
     print("Lendo CSV...")
+
     df = pd.read_csv(csv_path)
 
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
