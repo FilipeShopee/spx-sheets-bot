@@ -101,5 +101,3 @@ if __name__ == "__main__":
         print("Erro durante execução:")
         print(str(e))
         raise
-
-analise essa funcao
