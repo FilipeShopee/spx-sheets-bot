@@ -36,7 +36,6 @@ def baixar_csv():
 
         page = context.new_page()
 
-        # Remove flag webdriver
         page.add_init_script("""
             Object.defineProperty(navigator, 'webdriver', {
                 get: () => undefined
@@ -44,56 +43,30 @@ def baixar_csv():
         """)
 
         print("Acessando SPX...")
-        page.goto("https://spx.shopee.com.br", wait_until="networkidle")
+        page.goto("https://spx.shopee.com.br ", wait_until="networkidle")
 
         print("URL após carregamento:", page.url)
 
-        # Espera React montar
-        time.sleep(8)
+        # Espera a página montar
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(5000)
 
-        # DEBUG rápido
-        print("Verificando se login existe...")
-        print("Campos encontrados:", page.locator("input").count())
+        # DEBUG INPUTS
+        print("Verificando inputs disponíveis...")
+        inputs = page.locator("input")
+        total_inputs = inputs.count()
+        print("Campos encontrados:", total_inputs)
 
-        print("Listando inputs encontrados:")
-         inputs = page.locator("input")
-         for i in range(inputs.count()):
-            print("Input", i, "name:", inputs.nth(i).get_attribute("name"),
-          "type:", inputs.nth(i).get_attribute("type"),
-          "id:", inputs.nth(i).get_attribute("id"))
-
-        page.wait_for_selector('input[name="loginKey"]', timeout=60000)
-
-        print("Preenchendo login...")
-
-        page.fill('input[name="loginKey"]', SPX_EMAIL)
-        page.fill('input[type="password"]', SPX_PASSWORD)
-
-        page.click('button[type="submit"]')
-
-        page.wait_for_load_state("networkidle", timeout=60000)
-        time.sleep(5)
-
-        print("Login realizado.")
-
-        page.goto(
-            "https://spx.shopee.com.br/#/dashboard/toProductivity",
-            wait_until="networkidle"
-        )
-
-        page.wait_for_selector("text=Export", timeout=60000)
-
-        with page.expect_download(timeout=60000) as download_info:
-            page.click("text=Export")
-
-        download = download_info.value
-        path = "report.csv"
-        download.save_as(path)
-
-        print("Download concluído.")
+        for i in range(total_inputs):
+            print(
+                "Input", i,
+                "| name:", inputs.nth(i).get_attribute("name"),
+                "| type:", inputs.nth(i).get_attribute("type"),
+                "| id:", inputs.nth(i).get_attribute("id")
+            )
 
         browser.close()
-        return path
+        return None
 
 
 def enviar_para_sheets(csv_path):
@@ -101,7 +74,7 @@ def enviar_para_sheets(csv_path):
 
     df = pd.read_csv(csv_path)
 
-    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    scopes = ["https://www.googleapis.com/auth/spreadsheets "]
 
     creds = Credentials.from_service_account_info(
         json.loads(GOOGLE_CREDS),
@@ -128,3 +101,5 @@ if __name__ == "__main__":
         print("Erro durante execução:")
         print(str(e))
         raise
+
+analise essa funcao
