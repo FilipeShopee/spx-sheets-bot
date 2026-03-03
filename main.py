@@ -55,6 +55,13 @@ def baixar_csv():
         print("Verificando se login existe...")
         print("Campos encontrados:", page.locator("input").count())
 
+        print("Listando inputs encontrados:")
+inputs = page.locator("input")
+for i in range(inputs.count()):
+    print("Input", i, "name:", inputs.nth(i).get_attribute("name"),
+          "type:", inputs.nth(i).get_attribute("type"),
+          "id:", inputs.nth(i).get_attribute("id"))
+
         page.wait_for_selector('input[name="loginKey"]', timeout=60000)
 
         print("Preenchendo login...")
