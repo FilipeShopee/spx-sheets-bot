@@ -7,73 +7,74 @@ import os
 import json
 
 
-# =========================
-# Variáveis de ambiente
-# =========================
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 SHEET_NAME = os.getenv("SHEET_NAME")
-
 SPX_EMAIL = os.getenv("SPX_EMAIL")
 SPX_PASSWORD = os.getenv("SPX_PASSWORD")
-
 GOOGLE_CREDS = os.getenv("GOOGLE_CREDS")
 
 
-# =========================
-# Função: Baixar CSV do SPX
-# =========================
 def baixar_csv():
     with sync_playwright() as p:
-        print("Abrindo navegador...")
+        print("Abrindo navegador stealth...")
 
         browser = p.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"]
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled"
+            ]
         )
 
-        context = browser.new_context()
+        context = browser.new_context(
+            viewport={"width": 1366, "height": 768},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+            locale="pt-BR",
+            timezone_id="America/Sao_Paulo"
+        )
+
         page = context.new_page()
 
-        print("Iniciando login no SPX...")
+        # Remove flag webdriver
+        page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+        """)
 
-        # Acessa SPX
-        page.goto("https://spx.shopee.com.br", wait_until="domcontentloaded")
+        print("Acessando SPX...")
+        page.goto("https://spx.shopee.com.br", wait_until="networkidle")
 
-        # DEBUG
-        print("\n================ DEBUG INFO ================\n")
-        print("URL atual:", page.url)
-        print("\nHTML carregado:\n")
-        print(page.content())
-        print("\n============================================\n")
+        print("URL após carregamento:", page.url)
 
-        # Espera campo de login (SSO)
+        # Espera React montar
+        time.sleep(8)
+
+        # DEBUG rápido
+        print("Verificando se login existe...")
+        print("Campos encontrados:", page.locator("input").count())
+
         page.wait_for_selector('input[name="loginKey"]', timeout=60000)
 
-        print("Preenchendo credenciais...")
+        print("Preenchendo login...")
 
         page.fill('input[name="loginKey"]', SPX_EMAIL)
         page.fill('input[type="password"]', SPX_PASSWORD)
 
         page.click('button[type="submit"]')
 
-        print("Aguardando redirecionamento...")
         page.wait_for_load_state("networkidle", timeout=60000)
-
         time.sleep(5)
 
-        print("Login realizado com sucesso.")
+        print("Login realizado.")
 
-        # Ir para dashboard
         page.goto(
             "https://spx.shopee.com.br/#/dashboard/toProductivity",
             wait_until="networkidle"
         )
 
-        print("Acessando dashboard...")
-
         page.wait_for_selector("text=Export", timeout=60000)
-
-        print("Exportando relatório...")
 
         with page.expect_download(timeout=60000) as download_info:
             page.click("text=Export")
@@ -88,11 +89,8 @@ def baixar_csv():
         return path
 
 
-# =========================
-# Função: Enviar para Sheets
-# =========================
 def enviar_para_sheets(csv_path):
-    print("Lendo CSV...")
+    print("Enviando para Sheets...")
 
     df = pd.read_csv(csv_path)
 
@@ -106,24 +104,17 @@ def enviar_para_sheets(csv_path):
     client = gspread.authorize(creds)
     sheet = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
 
-    print("Atualizando planilha...")
-
     sheet.clear()
     sheet.update([df.columns.values.tolist()] + df.values.tolist())
 
-    print("Planilha atualizada com sucesso 🚀")
+    print("Planilha atualizada 🚀")
 
 
-# =========================
-# Execução principal
-# =========================
 if __name__ == "__main__":
     try:
         print("Iniciando automação...")
-
         arquivo = baixar_csv()
         enviar_para_sheets(arquivo)
-
         print("Processo finalizado com sucesso ✅")
 
     except Exception as e:
