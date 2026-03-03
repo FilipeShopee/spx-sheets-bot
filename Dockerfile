@@ -1,4 +1,3 @@
-Add Dockerfile for Playwright container
 FROM mcr.microsoft.com/playwright/python:latest
 
 WORKDIR /app
