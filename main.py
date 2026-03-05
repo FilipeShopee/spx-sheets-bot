@@ -1,26 +1,17 @@
 import os
 import json
 import time
-import pandas as pd
+from playwright.sync_api import sync_playwright
+from google.oauth2.service_account import Credentials
 import gspread
 
-from google.oauth2.service_account import Credentials
-from playwright.sync_api import sync_playwright
-
-SPX_EMAIL = os.getenv("SPX_EMAIL")
-SPX_PASSWORD = os.getenv("SPX_PASSWORD")
-
-SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
-SHEET_NAME = os.getenv("SHEET_NAME")
-
+EMAIL = os.getenv("SPX_EMAIL")
+PASSWORD = os.getenv("SPX_PASSWORD")
 GOOGLE_CREDS = os.getenv("GOOGLE_CREDS")
 
+REPORT_URL = "https://spx.shopee.com.br/#/dashboard/toProductivity"
 
-# ===============================
-# AUTENTICAÇÃO GOOGLE SHEETS
-# ===============================
-def conectar_sheets():
-
+def get_gspread_client():
     creds_dict = json.loads(GOOGLE_CREDS)
 
     scopes = [
@@ -28,29 +19,25 @@ def conectar_sheets():
         "https://www.googleapis.com/auth/drive"
     ]
 
-    credentials = Credentials.from_service_account_info(
-        creds_dict,
-        scopes=scopes
-    )
+    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
 
-    client = gspread.authorize(credentials)
+    return gspread.authorize(credentials)
 
-    return client
-
-
-# ===============================
-# DOWNLOAD CSV DO SPX
-# ===============================
-def baixar_csv():
+def run():
 
     print("Iniciando automação...")
 
     with sync_playwright() as p:
 
         print("Abrindo navegador...")
+
         browser = p.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-blink-features=AutomationControlled"]
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled"
+            ]
         )
 
         context = browser.new_context()
@@ -59,110 +46,115 @@ def baixar_csv():
 
         print("Acessando SPX login...")
 
-        page.goto(
-            "https://spx.shopee.com.br/",
-            timeout=60000
-        )
+        page.goto("https://spx.shopee.com.br")
 
         page.wait_for_timeout(5000)
 
         print("URL atual:", page.url)
 
+        print("HTML da página:")
+        print(page.content())
+
         print("Procurando campos de login...")
 
-        inputs = page.query_selector_all("input")
+        inputs = page.locator("input").all()
 
         print("Campos encontrados:", len(inputs))
 
         for i, inp in enumerate(inputs):
-
-            print(
-                f"Input {i} | name:",
-                inp.get_attribute("name"),
-                "| type:",
-                inp.get_attribute("type")
-            )
+            try:
+                print(
+                    f"Input {i} | name: {inp.get_attribute('name')} | type: {inp.get_attribute('type')}"
+                )
+            except:
+                pass
 
         print("Preenchendo login...")
 
-        page.fill('input[type="text"]', SPX_EMAIL)
-        page.fill('input[type="password"]', SPX_PASSWORD)
+        page.fill('input[type="text"]', EMAIL)
+        page.fill('input[type="password"]', PASSWORD)
+
+        page.wait_for_timeout(2000)
 
         print("Clicando em login...")
 
-        page.click('button[type="submit"]')
+        try:
+            page.get_by_text("Log In").click(timeout=10000)
+        except:
+            try:
+                page.get_by_role("button").click(timeout=10000)
+            except:
+                page.locator("button").last.click()
 
-        page.wait_for_load_state("networkidle")
+        print("Login enviado...")
 
-        page.wait_for_timeout(8000)
+        page.wait_for_timeout(10000)
 
-        print("Login realizado, indo para relatório...")
+        print("URL após login:", page.url)
 
-        # ⚠️ COLOQUE AQUI A URL DO RELATÓRIO
-        page.goto(
-            "COLE_AQUI_URL_DO_RELATORIO",
-            timeout=60000
-        )
+        print("Abrindo dashboard produtividade...")
 
-        page.wait_for_timeout(8000)
+        page.goto(REPORT_URL)
 
-        print("Iniciando download...")
+        page.wait_for_timeout(15000)
 
-        with page.expect_download() as download_info:
+        print("Página carregada!")
 
-            page.click("text=Export")
+        print("HTML da página do relatório:")
+        print(page.content())
 
-        download = download_info.value
+        print("Extraindo tabelas...")
 
-        path = "/tmp/relatorio.csv"
+        tables = page.locator("table")
 
-        download.save_as(path)
+        total_tables = tables.count()
 
-        print("Download concluído:", path)
+        print("Total de tabelas encontradas:", total_tables)
+
+        data = []
+
+        if total_tables > 0:
+
+            rows = tables.first.locator("tr")
+
+            for i in range(rows.count()):
+
+                cols = rows.nth(i).locator("td,th")
+
+                row = []
+
+                for j in range(cols.count()):
+
+                    row.append(cols.nth(j).inner_text())
+
+                data.append(row)
+
+        print("Linhas coletadas:", len(data))
+
+        if len(data) > 0:
+
+            print("Enviando para Google Sheets...")
+
+            client = get_gspread_client()
+
+            spreadsheet = client.open_by_key(os.getenv("SPREADSHEET_ID"))
+
+            sheet = spreadsheet.sheet1
+
+            sheet.clear()
+
+            sheet.update("A1", data)
+
+            print("Dados enviados!")
+
+        else:
+
+            print("Nenhum dado encontrado na tabela.")
 
         browser.close()
 
-        return path
+        print("Automação finalizada.")
 
 
-# ===============================
-# ENVIAR PARA GOOGLE SHEETS
-# ===============================
-def enviar_para_sheets(csv_path):
-
-    print("Enviando para Google Sheets...")
-
-    df = pd.read_csv(csv_path)
-
-    client = conectar_sheets()
-
-    sheet = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
-
-    sheet.clear()
-
-    sheet.update(
-        [df.columns.values.tolist()] +
-        df.values.tolist()
-    )
-
-    print("Dados enviados com sucesso!")
-
-
-# ===============================
-# EXECUÇÃO PRINCIPAL
-# ===============================
 if __name__ == "__main__":
-
-    try:
-
-        arquivo = baixar_csv()
-
-        if arquivo:
-            enviar_para_sheets(arquivo)
-        else:
-            print("Nenhum CSV gerado")
-
-    except Exception as e:
-
-        print("Erro durante execução:")
-        print(e)
+    run()
