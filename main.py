@@ -22,6 +22,9 @@ GOOGLE_PASSWORD = os.getenv("GOOGLE_PASSWORD")
 # GOOGLE SHEETS
 # ================================
 
+print("GOOGLE_EMAIL:", GOOGLE_EMAIL)
+print("GOOGLE_PASSWORD:", "OK" if GOOGLE_PASSWORD else "None")
+
 def conectar_sheets():
 
     creds_dict = json.loads(GOOGLE_CREDS)
