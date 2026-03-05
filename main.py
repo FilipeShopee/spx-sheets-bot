@@ -1,145 +1,73 @@
 import os
-import json
 import time
-import pandas as pd
-import gspread
-
-from google.oauth2.service_account import Credentials
 from playwright.sync_api import sync_playwright
 
-# ================================
-# VARIÁVEIS DE AMBIENTE
-# ================================
-
-GOOGLE_CREDS = os.getenv("GOOGLE_CREDS")
-SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
-SHEET_NAME = os.getenv("SHEET_NAME")
+# ==========================
+# CONFIG
+# ==========================
 
 GOOGLE_EMAIL = os.getenv("GOOGLE_EMAIL")
 GOOGLE_PASSWORD = os.getenv("GOOGLE_PASSWORD")
 
-# ================================
-# GOOGLE SHEETS
-# ================================
-
-print("GOOGLE_EMAIL:", GOOGLE_EMAIL)
-print("GOOGLE_PASSWORD:", "OK" if GOOGLE_PASSWORD else "None")
-
-def conectar_sheets():
-
-    creds_dict = json.loads(GOOGLE_CREDS)
-
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-
-    client = gspread.authorize(creds)
-
-    sheet = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
-
-    return sheet
+SPX_URL = "https://spx.shopee.com.br/#/dashboard/toProductivity"
 
 
-# ================================
-# ENVIAR DATAFRAME PARA SHEETS
-# ================================
-
-def enviar_para_sheets(df):
-
-    sheet = conectar_sheets()
-
-    sheet.clear()
-
-    data = [df.columns.values.tolist()] + df.values.tolist()
-
-    sheet.update(data)
-
-    print("Dados enviados para Google Sheets")
-
-
-# ================================
-# SCRAPING SPX
-# ================================
-
-def extrair_dados(page):
-
-    print("Abrindo dashboard produtividade...")
-
-    page.goto("https://spx.shopee.com.br/#/dashboard/toProductivity")
-
-    page.wait_for_timeout(15000)
-
-    print("Capturando HTML da página...")
-
-    html = page.content()
-
-    print(html[:2000])
-
-    # Exemplo de dataset fake (até capturarmos a API real)
-    data = {
-        "status": ["logado"],
-        "timestamp": [time.strftime("%Y-%m-%d %H:%M:%S")]
-    }
-
-    df = pd.DataFrame(data)
-
-    return df
-
-
-# ================================
+# ==========================
 # LOGIN GOOGLE
-# ================================
+# ==========================
 
 def login_google(page):
 
-    print("Abrindo SPX...")
-
-    page.goto("https://spx.shopee.com.br")
-
-    page.wait_for_timeout(8000)
-
     print("Procurando botão Google...")
-
-    page.wait_for_selector("text=Entrar com o Google", timeout=60000)
-
-    print("Clicando em Entrar com Google")
-
-    page.click("text=Entrar com o Google")
 
     page.wait_for_timeout(5000)
 
-    print("Digitando email Google")
+    # tenta encontrar botão google
+    if page.locator("text=Google").count() > 0:
+        print("Clicando em Entrar com Google")
+        page.locator("text=Google").first.click()
+    else:
+        print("Botão Google não encontrado, tentando seletor alternativo")
+        page.click("button:has-text('Google')")
+
+    # =====================
+    # EMAIL
+    # =====================
+
+    print("Aguardando campo de email...")
 
     page.wait_for_selector('input[type="email"]', timeout=60000)
 
+    print("Digitando email Google")
+
     page.fill('input[type="email"]', GOOGLE_EMAIL)
 
-    page.click("#identifierNext")
+    page.keyboard.press("Enter")
 
-    page.wait_for_timeout(5000)
+    page.wait_for_timeout(4000)
 
-    print("Digitando senha Google")
+    # =====================
+    # PASSWORD
+    # =====================
 
-    page.wait_for_selector('input[type="password"]', timeout=60000)
+    print("Aguardando campo de senha...")
 
-    page.fill('input[type="password"]', GOOGLE_PASSWORD)
+    page.wait_for_selector('input[name="Passwd"]', timeout=60000)
 
-    page.click("#passwordNext")
+    print("Digitando senha...")
 
-    print("Aguardando login completar...")
+    page.fill('input[name="Passwd"]', GOOGLE_PASSWORD)
 
-    page.wait_for_timeout(15000)
+    page.keyboard.press("Enter")
 
-    print("Login finalizado")
+    page.wait_for_timeout(8000)
+
+    print("Login Google finalizado")
 
 
-
-# ================================
+# ==========================
 # MAIN
-# ================================
+# ==========================
 
 def run():
 
@@ -151,28 +79,54 @@ def run():
 
         browser = p.chromium.launch(
             headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-dev-shm-usage"
-            ]
+            args=["--no-sandbox", "--disable-dev-shm-usage"]
         )
 
         context = browser.new_context()
 
         page = context.new_page()
 
+        # =====================
+        # ABRIR SPX
+        # =====================
+
+        print("Abrindo SPX...")
+
+        page.goto(SPX_URL, timeout=60000)
+
+        page.wait_for_timeout(5000)
+
+        # =====================
+        # LOGIN
+        # =====================
+
         login_google(page)
 
-        df = extrair_dados(page)
+        # =====================
+        # IR PARA DASHBOARD
+        # =====================
 
-        enviar_para_sheets(df)
+        print("Acessando dashboard produtividade...")
+
+        page.goto(SPX_URL)
+
+        page.wait_for_timeout(15000)
+
+        # DEBUG
+        print("URL atual:", page.url)
+
+        print("HTML da página:")
+
+        print(page.content())
+
+        print("Automação finalizada")
 
         browser.close()
 
-        print("Processo finalizado")
 
-
-# ================================
+# ==========================
+# START
+# ==========================
 
 if __name__ == "__main__":
     run()
